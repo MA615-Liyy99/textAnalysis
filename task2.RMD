@@ -1,0 +1,217 @@
+---
+title: "MA615 Assignment4 Task Two"
+author: "Yuyang Li"
+date: "2021/12/8"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=F,message = F,echo=F,highlight=F)
+
+library(devtools)
+library(rticles)
+# Set tnum database and source function
+library(tnum)
+tnum.authorize("mssp1.bu.edu")
+tnum.setSpace("test2")
+source("Book2TN-v6A-1.R")
+```
+
+
+```{r, echo=FALSE}
+
+#devtools::install_github("Truenumbers/tnum/tnum",force = TRUE)
+#install.packages("textdata")
+knitr::opts_chunk$set(fig.width=6, fig.height=4,fig.align = "center") 
+pacman::p_load(
+  gutenbergr,
+  tidytext,
+  magrittr,
+  textdata,
+  dplyr,
+  stringr,
+  tidyverse,
+  tidyr,
+  scales,
+  reshape2,
+  ggplot2,
+  tinytex,
+  latexpdf,
+  sentimentr)
+
+```
+
+
+## Task one : Pick one book
+
+The book I selected called Old Granny Fox written by Thornton W. Burgess from Gutenburg. It's a fairy tale.
+```{r, echo=FALSE}
+data<- gutenberg_download(4980)
+```
+
+## Task two : Words analysis
+Firstly I cleaned the data into tidy format and tokenized it, and imported three methods to analysis the sentiment of text.
+```{r, include=FALSE}
+#data clean
+tidy_data <- data %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words)
+
+tidy_data %>%
+  count(word, sort = TRUE)
+```
+
+```{r include=FALSE}
+#Import three lexicons to analyse sentiment
+get_sentiments("afinn")
+get_sentiments("nrc")
+get_sentiments("bing")
+```
+
+```{r include=FALSE}
+#This chunk using the sentiment is "joy" from NRC lexicon and get the matching words in my book
+nyc_joy <- get_sentiments("nrc")%>%
+  filter(sentiment == "joy")
+
+tidy_data %>%
+  inner_join(nyc_joy)%>%
+  count(word, sort = TRUE)
+```
+
+```{r, include=FALSE}
+#Creating tidy book, using linenumber to get row number, and getting chapter number.
+tidy_book<-data%>%
+  mutate(
+    linenumber = row_number(),
+    chapter = cumsum(str_detect(text, 
+                                regex("^chapter [\\divxlc]", 
+                                      ignore_case = TRUE)))) %>%
+  ungroup() %>%
+  unnest_tokens(word, text)
+```
+
+```{r}
+# Using BIN lexicon to get sentiment score which is positive minus negative
+book_sentiment<-  tidy_book%>%
+  inner_join(get_sentiments("bing"))%>%
+  count(index = linenumber %/% 80, sentiment)%>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(sentiment= positive - negative)
+```
+
+Figure 1 shows box plot of sentiment using BING lexicon, and figure 2 shows analysis with three sentiment lexicons. I found that using BING lexicon fits best among these figures. And the main sentiment of whole book tend to be positive.
+```{r fig.cap="sentiment plot using bing"}
+ggplot(book_sentiment, aes(index, sentiment)) +
+  geom_col(show.legend = FALSE, color = "blue")
+```
+
+```{r, echo=FALSE}
+# Using AFINN lexicon to get sentiment score
+afinn <- tidy_book %>% 
+  inner_join(get_sentiments("afinn")) %>% 
+  group_by(index = linenumber %/% 80) %>% 
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN")
+
+# Using BING and NRC lexicons to get sentiment score
+bing_and_nrc <- bind_rows(
+  tidy_book %>% 
+    inner_join(get_sentiments("bing")) %>%
+    mutate(method = "Bing et al."),
+  tidy_book %>% 
+    inner_join(get_sentiments("nrc") %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative"))
+    ) %>%
+    mutate(method = "NRC")) %>%
+  count(method, index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+```
+
+```{r fig.cap="sentiment plot"}
+# Combining three lexicons to plot
+bind_rows(afinn, 
+          bing_and_nrc) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE,width = 0.5) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+```
+
+Figure 3 shows the number of positive and negative words appeared in book. It's clear that the frequency of positive words is higher than negative. The highest contribution word in positive group is "right" and it's "foolish" in negative group. As we know that this book is a fairy tale, and the main content of the book is when a deep winter snow carpets the Green Forest and nearby meadow, Granny Fox and Reddy have some disagreements on how best to find some food. But Granny -- with her years of experience -- wins out over Reddy and teaches him quite a bit about patience, common sense, and resourcefulness. So the the whole sentiment of book should be positive and relaxing.
+
+
+```{r, include=FALSE}
+# Getting the counts of positive and negative words
+bing_word_counts <- tidy_book %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+bing_word_counts
+```
+
+
+```{r fig.width=6, fig.height=2,fig.cap="negative and positive words count"}
+# Plotting the frequency of positive and negative words in book respectively
+library(ggplot2)
+bing_word_counts %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 10) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+```
+
+
+I also got word cloud figures, figure 4 shows the frequency of words appeared in book, the two main characters' name is the bigest part of figure. And figure 5 is about sentimental words, which are separate into positive side and negative side.
+
+```{r fig.cap="word cloud"}
+#install.packages("wordcloud")
+library(wordcloud)
+# Plotting word cloud of words in book
+tidy_book %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  with(wordcloud(word, n, max.words = 100,ramdom.order = T,colors = c("#3e236e", "#673AB7", "#9370d2", 
+                               "#0044a9", "#1B76FF", "#76adff", 
+                               "#28602b", "#43A047", "#87cd8a")))
+```
+
+```{r fig.cap="sentiment word cloud"}
+library(reshape2)
+# Plotting word cloud of sentimental words in book including negative side and positive side
+tidy_book %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("gray20", "gray80"),
+                   max.words = 100)
+```
+
+## Extra credit of Task two
+
+I found another lexicon provided in package  'textdata' called 'Loughran-Mcdonald', when I used this new lexicon to get similar figure and result as before.
+```{r}
+# Using the new lexicon to get sentiment score
+new<-tidy_book %>% 
+    inner_join(get_sentiments("loughran")) %>%
+    mutate(method = "Loughran-McDonald")  %>% 
+  count(method, index = linenumber %/% 80, sentiment) %>% 
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+# Getting the new barplot
+new%>%ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +labs(title='Loughran-McDonald')+
+  theme_bw()+theme(plot.title = element_text(hjust = 0.5))
+```

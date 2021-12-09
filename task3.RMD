@@ -1,0 +1,185 @@
+---
+title: "task3"
+output: pdf_document
+---
+---
+title: "MA615 Assignment4 Task Three"
+author: "Yuyang Li"
+date: "2021/12/8"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=F,message = F,echo=F,highlight=F)
+
+library(devtools)
+library(rticles)
+# Set tnum database and source function
+library(tnum)
+tnum.authorize("mssp1.bu.edu")
+tnum.setSpace("test2")
+source("Book2TN-v6A-1.R")
+```
+
+
+```{r, echo=FALSE}
+
+#devtools::install_github("Truenumbers/tnum/tnum",force = TRUE)
+#install.packages("textdata")
+knitr::opts_chunk$set(fig.width=6, fig.height=4,fig.align = "center") 
+pacman::p_load(
+  gutenbergr,
+  tidytext,
+  magrittr,
+  textdata,
+  dplyr,
+  stringr,
+  tidyverse,
+  tidyr,
+  scales,
+  reshape2,
+  ggplot2,
+  tinytex,
+  latexpdf,
+  sentimentr)
+
+```
+
+```{r, echo=FALSE}
+data<- gutenberg_download(4980)
+```
+
+
+## Task three
+```{r}
+#write.table(data,'Garden.txt',row.names = F) 
+#garden <- read.table('Garden.txt',header = TRUE)
+```
+
+```{r}
+#tnBooksFromLines(garden$text, "Burnett/Garden")
+```
+
+```{r}
+# Changing my book into tnum
+#write.table(data,'Fox.txt',row.names = F) 
+fox <- read.table('Fox.txt',header = TRUE)
+#tnBooksFromLines(fox$text, "Burgess/Fox")
+```
+
+
+
+
+
+```{r}
+# Create tidy book
+tidy_fox <- fox %>%
+  mutate(
+    linenumber = row_number(),
+    chapter = cumsum(str_detect(text, 
+                                regex("chapter", 
+                                      ignore_case = TRUE)))) %>% 
+  unnest_tokens(word, text) 
+```
+
+First of all, I change my book into tnum form, and the content of my tnum database is shown as follow:
+
+
+
+Secondly I use 'sentimentr' to get sentiment score group by these scores with section to get the average result. The plot sort the average sentiment score from high to low.
+```{r}
+# Separate into different columns
+query<- tnum.query('Burgess/fox/section# has text',max=5000) %>% tnum.objectsToDf()
+query %>% view()
+fox_sentence<-query %>% separate(col=subject,
+                  into = c("path1", "path2","section","paragraph","sentence"), 
+                  sep = "/", 
+                  fill = "right") %>% 
+  select(section:string.value)
+```
+
+```{r}
+# Get the number of section, paragraph and sentence
+fox_sentence<-fox_sentence %>% 
+  mutate_at(c('section','paragraph','sentence'),~str_extract_all(.,"\\d+") %>%
+              unlist() %>%
+              as.numeric())%>%
+  filter(section !=0)
+```
+
+
+```{r}
+# Use sentimentr to get sentiment score group by these scores with section to get the average result
+library(magrittr)
+sentence_out<-fox_sentence %>%
+  filter(section !=0)%>% dplyr::mutate(sentence_split = get_sentences(string.value)) %$%
+    sentiment_by(sentence_split, list(section))
+  
+
+plot(sentence_out)
+```
+
+
+### Compare the analysis result with Task two
+
+Because the scale of scores of two methods are different, so I need to change them into one consistent scale using function, then I get the bar plot for two scores.
+
+
+```{r}
+# Create a new bing with index=chapter
+new_bing<-tidy_fox %>% 
+    inner_join(get_sentiments("bing")) %>%
+    mutate(method = "Bing et al.") %>% 
+    count(method, index = chapter, sentiment) %>%
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+# Scale sentiment to keep unit same 
+new_bing2<-new_bing %>% 
+  mutate(bing_scale=scale(sentiment)) %>% 
+  select(method,index,bing_scale)
+
+# Change the name of column two in order to join by section
+colnames(new_bing2)[2]='section'
+
+# Scale sentiment to keep unit same 
+sentence_out<-sentence_out %>% mutate(sentimentr_scale=scale(ave_sentiment))
+
+# Join two df
+sentence_out_2method<-left_join(sentence_out,new_bing2,by='section')%>% select(section,bing_scale,sentimentr_scale)
+
+# Use pivot longer for ggplot
+sentence_out_2method_plot<-sentence_out_2method %>% pivot_longer(cols=c('sentimentr_scale','bing_scale'),names_to = 'sentiment')
+
+# Create barplot to compare
+sentence_out_2method_plot %>%ggplot(aes(y=value,x=factor(section))) +
+  geom_bar(aes(fill=factor(sentiment)),stat='identity',position = "dodge",width = 0.7)+theme_bw()
+
+```
+
+## Extra credit of Task three: character analysis
+
+As I mentioned in Task two, there are two main characters in this book, one is Granny Fox and other is Reddy. So I select them from my book and count their appeared frequency in each chapter. seeing the table I found in most of the chapter Granny appears more than Reddy.
+
+```{r}
+# Find the two main characters Granny and Reddy
+book_sentence_indi<-fox_sentence %>% mutate(granny=str_match(fox_sentence$string.value,regex('(Granny)'))[,1],
+                         reddy=str_match(fox_sentence$string.value,regex('(Reddy)'))[,1])
+# Use sentiment_by to get the score
+score<-book_sentence_indi %>% dplyr::mutate(sentence_split = get_sentences(string.value))%$%
+    sentiment_by(sentence_split) %>% `$`(ave_sentiment)
+# Count two characters' time in each chapter
+book_sentence_indi$score<-score
+re<-book_sentence_indi %>% group_by(section) %>% summarise(granny=sum(granny %>% is.na() %>% `!`()),
+                                                       reddy=sum(reddy%>% is.na() %>% `!`()))
+knitr::kable(re,'simple')
+# use group by to display the result
+re2<-book_sentence_indi %>% group_by(section,paragraph) %>% summarise(
+  both_appear=sum(granny %>% is.na() %>% `!`() & reddy%>% is.na() %>% `!`() ))
+#re2 %>% filter(both_appear>0)
+knitr::kable(re2 %>% filter(both_appear>0),'simple')
+```
