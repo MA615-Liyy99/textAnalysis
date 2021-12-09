@@ -1,8 +1,8 @@
 ---
 title: "MA615 Assignment4"
-subtitle: "Text Analysis of Pierre and Jean Task Two"
+subtitle: "Text Analysis of Old Granny Fox"
 author: "Yuyang Li"
-date: "2021/12/6"
+date: "2021/12/8"
 output:
   pdf_document:
     latex_engine: xelatex
@@ -47,7 +47,7 @@ pacman::p_load(
 
 ## Task one : Pick one book
 
-The book I selected called Old Fox Granny written by Thornton W. Burgess from Gutenburg. It's a fairy tale.
+The book I selected called Old Granny Fox written by Thornton W. Burgess from Gutenburg. It's a fairy tale.
 ```{r, echo=FALSE}
 data<- gutenberg_download(4980)
 ```
